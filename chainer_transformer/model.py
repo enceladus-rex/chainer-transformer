@@ -6,13 +6,16 @@ from chainer import Link, Chain
 import chainer.functions as F
 import chainer.links as L
 
-import cupy as cp
+try:
+  import cupy as xp
+except ImportError:
+  import numpy as xp
 
 HeadData = namedtuple('HeadData', ('query', 'key', 'value'))
 
 
-def scaled_dot_product_attention(queries, keys, values, mask=None):
-  x1 = F.matmul(queries, keys, transb=True) / self.scale
+def scaled_dot_product_attention(queries, keys, values, scale=0.1, mask=None):
+  x1 = F.matmul(queries, keys, transb=True) / xp.array(scale, dtype=keys.dtype)
   x2 = x1 * mask if mask is not None else x1
   x3 = F.softmax(x2)
   x4 = F.matmul(x3, values)
@@ -20,17 +23,17 @@ def scaled_dot_product_attention(queries, keys, values, mask=None):
 
 
 def generate_positional_encoding(start, end, dim):
-  positions = cp.arange(start, end)
+  positions = xp.arange(start, end)
   stacks = []
   for i in range(dim):
     divisor = 10000**(2 * i / float(dim))
     elements = positions / divisor
     if i % 2 == 0:
-      pe = cp.sin(elements)
+      pe = xp.sin(elements)
     else:
-      pe = cp.cos(elements)
+      pe = xp.cos(elements)
     stacks.append(pe)
-  return cp.transpose(cp.stack(stacks))
+  return xp.transpose(xp.stack(stacks))
 
 
 class MultiHeadAttention(Chain):
@@ -79,6 +82,7 @@ class PointwiseFeedForwardNetwork(Chain):
 
 class TransformerEncoderUnit(Chain):
   def __init__(self, num_heads, model_dim, ff_dim, p_drop):
+    super().__init__()
     self.p_drop = p_drop
     with self.init_scope():
       kv_dim = model_dim // num_heads
@@ -110,9 +114,9 @@ class TransformerDecoderUnit(Chain):
       self.ff = PointwiseFeedForwardNetwork(model_dim, ff_dim)
 
   def forward(self, inputs_encoding, outputs_unit):
-    mask_shape = tuple(inputs_encoding.shape)
+    mask_shape = list(inputs_encoding.shape)
     mask_shape[-1] = mask_shape[-2]
-    mask = cp.tril(cp.ones(mask_shape), inputs_encoding.dtype)
+    mask = xp.tril(xp.ones(mask_shape)).astype(inputs_encoding.dtype)
     x1 = F.dropout(self.mmha(outputs_unit, outputs_unit, outputs_unit, mask),
                    self.p_drop)
     x2 = self.lnorm1(outputs_unit + x1)
@@ -195,7 +199,7 @@ class Transformer(Chain):
         outputs.shape[-1])
 
     input_embedding = self.linear_embedding(inputs) * self.multiplier
-    output_embedding = self.linear_embedding(shifted_outputs) * self.multiplier
+    output_embedding = self.linear_embedding(outputs) * self.multiplier
 
     transformed_inputs = F.dropout(
         inputs_positional_encoding + input_embedding, self.p_drop)
