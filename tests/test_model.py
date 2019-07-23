@@ -1,9 +1,12 @@
 from chainer_transformer import model
+import pytest
 
 try:
   import cupy as xp
+  use_gpu = True
 except ImportError:
   import numpy as xp
+  use_gpu = False
 
 
 def test_multi_head_attention():
@@ -15,6 +18,7 @@ def test_multi_head_attention():
   value_dim = 32
   
   mha = model.MultiHeadAttention(num_heads, model_dim, key_dim, value_dim)
+  if use_gpu: mha.to_gpu()
   
   queries = xp.random.randn(num_queries, model_dim).astype(xp.float32)
   keys = xp.random.randn(num_kv, model_dim).astype(xp.float32)
@@ -31,6 +35,7 @@ def test_pointwise_ff():
   
   x = xp.random.randn(batch_size, model_dim).astype(xp.float32)
   pffn = model.PointwiseFeedForwardNetwork(model_dim, inner_dim)
+  if use_gpu: pffn.to_gpu()
 
   output = pffn(x)
   assert output.shape == (batch_size, model_dim)
@@ -45,6 +50,7 @@ def test_transformer_encoder_unit():
 
   x = xp.random.randn(seq_len, model_dim).astype(xp.float32)
   teu = model.TransformerEncoderUnit(num_heads, model_dim, ff_dim, p_drop)
+  if use_gpu: teu.to_gpu()
 
   output = teu(x)
   assert output.shape == (seq_len, model_dim)
@@ -60,6 +66,7 @@ def test_transformer_encoder():
 
   inputs_encoding = xp.random.randn(seq_len, model_dim).astype(xp.float32)
   te = model.TransformerEncoder(depth, num_heads, model_dim, ff_dim, p_drop)
+  if use_gpu: te.to_gpu()
 
   output = te(inputs_encoding)
   assert output.shape == (seq_len, model_dim)
@@ -75,6 +82,7 @@ def test_transformer_decoder_unit():
   inputs_encoding = xp.random.randn(seq_len, model_dim).astype(xp.float32)
   outputs_encoding = xp.random.randn(seq_len, model_dim).astype(xp.float32)
   tdu = model.TransformerDecoderUnit(num_heads, model_dim, ff_dim, p_drop)
+  if use_gpu: tdu.to_gpu()
 
   output = tdu(inputs_encoding, outputs_encoding)
   assert output.shape == (seq_len, model_dim)
@@ -91,6 +99,7 @@ def test_transformer_decoder():
   inputs_encoding = xp.random.randn(seq_len, model_dim).astype(xp.float32)
   outputs_encoding = xp.random.randn(seq_len, model_dim).astype(xp.float32)
   td = model.TransformerDecoder(depth, num_heads, model_dim, ff_dim, p_drop)
+  if use_gpu: td.to_gpu()
 
   output = td(inputs_encoding, outputs_encoding)
   assert output.shape == (seq_len, model_dim)
@@ -114,6 +123,7 @@ def test_transformer():
     decoder_depth,
     ff_dim,
     p_drop)
+  if use_gpu: transformer.to_gpu()
 
   output = transformer(inputs, outputs, 0, 10)
   assert output.shape == (seq_len, model_dim)

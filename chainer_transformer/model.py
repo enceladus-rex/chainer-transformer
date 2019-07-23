@@ -1,7 +1,7 @@
 from math import sqrt
 from collections import namedtuple
 
-from chainer import Link, Chain
+from chainer import Link, Chain, ChainList
 
 import chainer.functions as F
 import chainer.links as L
@@ -44,25 +44,26 @@ class MultiHeadAttention(Chain):
     self.key_dim = key_dim
     self.value_dim = value_dim
     self.multi_head_dim = num_heads * value_dim
-    self.head_links = []
     with self.init_scope():
+      self.head_query_links = ChainList()
+      self.head_key_links = ChainList()
+      self.head_value_links = ChainList()
       for i in range(num_heads):
-        self.head_links.append(
-            HeadData(L.Linear(model_dim, key_dim),
-                     L.Linear(model_dim, key_dim),
-                     L.Linear(model_dim, value_dim)))
+        self.head_query_links.append(L.Linear(model_dim, key_dim))
+        self.head_key_links.append(L.Linear(model_dim, key_dim))
+        self.head_value_links.append(L.Linear(model_dim, value_dim))
       self.output_link = L.Linear(self.multi_head_dim, model_dim)
 
   def forward(self, queries, keys, values, mask=None):
-    projections = []
     heads = []
     for i in range(self.num_heads):
-      hl = self.head_links[i]
+      query_projection = self.head_query_links[i](queries)
+      key_projection = self.head_key_links[i](keys)
+      value_projection = self.head_value_links[i](values)
 
-      projection = HeadData(hl.query(queries), hl.key(keys), hl.value(values))
-      head = scaled_dot_product_attention(*projection, mask=mask)
+      head = scaled_dot_product_attention(
+        query_projection, key_projection, value_projection, mask=mask)
 
-      projections.append(projection)
       heads.append(head)
 
     multi_head = F.concat(heads)
@@ -130,8 +131,8 @@ class TransformerDecoderUnit(Chain):
 class TransformerEncoder(Chain):
   def __init__(self, depth, num_heads, model_dim, ff_dim, p_drop):
     super().__init__()
-    self.unit_links = []
     with self.init_scope():
+      self.unit_links = ChainList()
       for i in range(depth):
         self.unit_links.append(
             TransformerEncoderUnit(num_heads, model_dim, ff_dim, p_drop))
@@ -148,9 +149,9 @@ class TransformerEncoder(Chain):
 class TransformerDecoder(Chain):
   def __init__(self, depth, num_heads, model_dim, ff_dim, p_drop):
     super().__init__()
-    self.unit_links = []
     with self.init_scope():
       self.lin1 = L.Linear(model_dim)
+      self.unit_links = ChainList()
       for i in range(depth):
         self.unit_links.append(
             TransformerDecoderUnit(num_heads, model_dim, ff_dim, p_drop))
