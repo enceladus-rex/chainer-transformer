@@ -1,5 +1,7 @@
 from chainer_transformer import util
 
+from pprint import pprint
+
 import pytest
 
 
@@ -26,6 +28,35 @@ def test_extract_pairs():
   ]
 
 
-def test_binary_pair_encoding():
+def test_binary_pair_encoding_simple():
   vocab = util.build_vocabulary('a b c')
-  util.binary_pair_encoding(vocab, 1)
+  token_indices, tokens = util.binary_pair_encoding(vocab, 1)
+  assert tokens == {
+    ('a', None): 1,
+    ('b', None): 1,
+    ('c', None): 1,
+  }
+
+
+def test_binary_pair_encoding_example():
+  vocab = util.build_vocabulary((
+    'low low low low low '
+    'lower lower '
+    'newest newest newest newest newest newest '
+    'widest widest widest'
+  ))
+
+  assert vocab == {
+    (('l',), ('o',), ('w',), (None,)): 5,
+    (('l',), ('o',), ('w',), ('e',), ('r',), (None,)): 2,
+    (('n',), ('e',), ('w',), ('e',), ('s',), ('t',), (None,)): 6,
+    (('w',), ('i',), ('d',), ('e',), ('s',), ('t',), (None,)): 3,
+  }
+
+  num_merges = 10
+  token_indices, tokens = util.binary_pair_encoding(vocab, num_merges)
+  
+  print()
+  pprint(tokens)
+  print()
+  pprint(list(zip(range(len(token_indices)), token_indices)))
