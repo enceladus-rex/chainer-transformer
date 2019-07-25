@@ -1,7 +1,7 @@
 # Chainer Transformer (Neural Sequence Transduction)
 
 This a paper implementation of `Attention is All You Need by Vaswani et al.` using the Chainer Neural Network library for
-learning purposes. 
+learning purposes. There is still some work to be done to fully train and validate the model.
 
 ## Instructions
 
