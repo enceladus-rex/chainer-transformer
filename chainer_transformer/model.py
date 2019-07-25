@@ -11,8 +11,6 @@ try:
 except ImportError:
   import numpy as xp
 
-HeadData = namedtuple('HeadData', ('query', 'key', 'value'))
-
 
 def scaled_dot_product_attention(queries, keys, values, scale=0.1, mask=None):
   x1 = F.matmul(queries, keys, transb=True) / xp.array(scale, dtype=keys.dtype)
@@ -61,8 +59,10 @@ class MultiHeadAttention(Chain):
       key_projection = self.head_key_links[i](keys)
       value_projection = self.head_value_links[i](values)
 
-      head = scaled_dot_product_attention(
-        query_projection, key_projection, value_projection, mask=mask)
+      head = scaled_dot_product_attention(query_projection,
+                                          key_projection,
+                                          value_projection,
+                                          mask=mask)
 
       heads.append(head)
 

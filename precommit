@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
-yapf --recursive src --in-place
+yapf --recursive chainer_transformer --in-place
 yapf --recursive tests --in-place

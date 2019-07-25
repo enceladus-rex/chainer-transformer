@@ -16,14 +16,14 @@ def test_multi_head_attention():
   model_dim = 128
   key_dim = 32
   value_dim = 32
-  
+
   mha = model.MultiHeadAttention(num_heads, model_dim, key_dim, value_dim)
   if use_gpu: mha.to_gpu()
-  
+
   queries = xp.random.randn(num_queries, model_dim).astype(xp.float32)
   keys = xp.random.randn(num_kv, model_dim).astype(xp.float32)
   values = xp.random.randn(num_kv, model_dim).astype(xp.float32)
-  
+
   output = mha(queries, keys, values)
   assert output.shape == (num_queries, model_dim)
 
@@ -32,7 +32,7 @@ def test_pointwise_ff():
   batch_size = 20
   model_dim = 128
   inner_dim = 512
-  
+
   x = xp.random.randn(batch_size, model_dim).astype(xp.float32)
   pffn = model.PointwiseFeedForwardNetwork(model_dim, inner_dim)
   if use_gpu: pffn.to_gpu()
@@ -116,18 +116,13 @@ def test_transformer():
 
   inputs = xp.random.randn(seq_len, model_dim).astype(xp.float32)
   outputs = xp.random.randn(seq_len, model_dim).astype(xp.float32)
-  transformer = model.Transformer(
-    model_dim, 
-    num_heads, 
-    encoder_depth, 
-    decoder_depth,
-    ff_dim,
-    p_drop)
+  transformer = model.Transformer(model_dim, num_heads, encoder_depth,
+                                  decoder_depth, ff_dim, p_drop)
   if use_gpu: transformer.to_gpu()
 
   output = transformer(inputs, outputs, 0, 10)
   assert output.shape == (seq_len, model_dim)
-  
+
 
 def test_generate_positional_encoding():
   start = 0
