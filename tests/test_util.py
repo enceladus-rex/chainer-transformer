@@ -29,8 +29,8 @@ def test_extract_pairs():
 
 def test_binary_pair_encoding_simple():
   vocab = util.build_vocabulary('a b c')
-  token_indices, tokens = util.binary_pair_encoding(vocab, 1)
-  assert tokens == {
+  bpe = util.binary_pair_encoding(vocab, 1)
+  assert bpe.token_counts == {
       ('a', None): 1,
       ('b', None): 1,
       ('c', None): 1,
@@ -51,9 +51,9 @@ def test_binary_pair_encoding_example():
   }
 
   num_merges = 10
-  token_indices, tokens = util.binary_pair_encoding(vocab, num_merges)
+  bpe = util.binary_pair_encoding(vocab, num_merges)
 
   print()
-  pprint(tokens)
+  pprint(bpe.token_counts)
   print()
-  pprint(list(zip(range(len(token_indices)), token_indices)))
+  pprint(list(zip(range(len(bpe.all_tokens)), bpe.all_tokens)))
