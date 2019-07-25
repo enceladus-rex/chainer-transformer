@@ -2,8 +2,9 @@
 
 cd docker/dataset/
 NO_SUDO=$(groups | grep -E "(docker )|( docker)|(^docker$)")
-if [[ $NO_SUDO ]]; then
-  docker build -t moses-tokenizer .
-else
-  sudo docker build -t moses-tokenizer .
+RUN=""
+if [[ ! $NO_SUDO ]]; then
+  RUN="sudo "
 fi
+
+$RUN docker build -t moses-tokenizer .
