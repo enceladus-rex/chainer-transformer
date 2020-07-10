@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-
-yapf --recursive chainer_transformer --in-place
-yapf --recursive tests --in-place

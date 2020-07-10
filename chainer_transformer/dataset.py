@@ -1,59 +1,77 @@
 from chainer.datasets import TextDataset, TransformDataset
-from chainer_transformer.util import word_token_indices, make_words
+
+from typing import NamedTuple, Dict, List, Optional
 
 try:
-  import cupy as xp
+    import cupy as xp
 except ImportError:
-  import numpy as xp
+    import numpy as xp
 
 
 def one_hot_encode(indices, dim):
-  return xp.eye(dim)[indices]
+    encoded = xp.zeros((len(indices), dim), dtype=xp.float32)
+    for i, ix in enumerate(indices):
+        encoded[i, ix] = 1.
+    return encoded
 
 
 def pad_indices(x, value, length):
-  assert len(x) <= length
-  if len(x) < length:
-    return x + [value] * (length - len(x))
-  return x
+    assert len(x) <= length
+    if len(x) < length:
+        return x + [value] * (length - len(x))
+    return x
 
 
-def combine_words(words):
-  return sum(words, ())
+class Vocab(NamedTuple):
+    index_to_bpe: List[str]
+    bpe_to_index: Dict[str, int]
 
+    @property
+    def vocab_size(self) -> int:
+        # Add 1 for EOL indicator.
+        return len(self.index_to_bpe) + 1
 
-def filter_data(source_data, target_data, token_trie):
-  source_indices = word_token_indices(combine_words(make_words(source_data)),
-                                      token_trie)
-  target_indices = word_token_indices(combine_words(make_words(target_data)),
-                                      token_trie)
-  return source_indices is not None and target_indices is not None
+    @property
+    def eol_index(self) -> int:
+        return len(self.index_to_bpe)
+
+    def transform(self, line, chunk_length: Optional[int] = None) -> xp.array:
+        tokens = line.split()
+        indices = [self.bpe_to_index[t] for t in tokens]
+        if chunk_length is not None:
+            indices = pad_indices(indices, self.eol_index, chunk_length)
+
+        return one_hot_encode(indices, self.vocab_size)
 
 
 class TokenTransformer:
-  def __init__(self, token_trie, dim, eol_index, chunk_length=100):
-    self.token_trie = token_trie
-    self.dim = dim
-    self.eol_index = eol_index
-    self.chunk_length = chunk_length
+    def __init__(self, source_bpe_vocab, target_bpe_vocab, chunk_length=1000):
+        self.source_bpe_vocab = source_bpe_vocab
+        self.target_bpe_vocab = target_bpe_vocab
+        self.chunk_length = chunk_length
 
-  def __call__(self, in_data):
-    source_data, target_data = in_data
-
-    source_indices = pad_indices(
-        word_token_indices(combine_words(make_words(source_data)),
-                           self.token_trie), self.eol_index, self.chunk_length)
-
-    target_indices = pad_indices(
-        word_token_indices(combine_words(make_words(target_data)),
-                           self.token_trie), self.eol_index, self.chunk_length)
-
-    return (one_hot_encode(source_indices,
-                           self.dim), one_hot_encode(target_indices, self.dim))
+    def __call__(self, in_data):
+        source_data, target_data = in_data
+        return self.source_bpe_vocab.transform(
+            source_data, self.chunk_length), self.target_bpe_vocab.transform(
+                target_data, self.chunk_length)
 
 
-def make_dataset(source_text, target_text, token_trie, dim, eol_index,
-                 chunk_length):
-  d = TextDataset((source_text, target_text))
-  return TransformDataset(
-      d, TokenTransformer(token_trie, dim, eol_index, chunk_length))
+def make_vocab(raw_bpe_vocab_filename) -> Vocab:
+    with open(raw_bpe_vocab_filename, 'r') as f:
+        index_to_bpe = [l.split()[0] for l in f.readlines()]
+        bpe_to_index = {bpe: i for i, bpe in enumerate(index_to_bpe)}
+        return Vocab(index_to_bpe, bpe_to_index)
+
+
+def make_dataset(source_bpe_filename,
+                 target_bpe_filename,
+                 source_bpe_vocab_filename,
+                 target_bpe_vocab_filename,
+                 chunk_length=1000):
+    d = TextDataset((source_bpe_filename, target_bpe_filename),
+                    filter_func=lambda x, y: x and y)
+    return TransformDataset(
+        d,
+        TokenTransformer(make_vocab(source_bpe_vocab_filename),
+                         make_vocab(target_bpe_vocab_filename), chunk_length))
