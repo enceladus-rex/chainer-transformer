@@ -8,15 +8,15 @@ def _random_vector(dim):
 
 
 @click.command()
-@click.option('--inputs_filename')
+@click.option('--input_filename')
 @click.option('--output_filename')
 @click.option('--seed', type=int, default=3849)
-def convert_vectors_into_npy(inputs_filename: str, output_filename: str,
+def convert_vectors_into_npy(input_filename: str, output_filename: str,
                              seed: int):
     vectors = []
     tokens = []
     embedding_size = None
-    with open(inputs_filename, 'r') as f:
+    with open(input_filename, 'r') as f:
         for i, l in enumerate(f):
             values = l.split(sep=' ')
             token = values[0]

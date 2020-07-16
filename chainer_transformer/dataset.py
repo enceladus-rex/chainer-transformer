@@ -1,3 +1,5 @@
+import re
+
 from chainer.datasets import TextDataset, TransformDataset
 
 import chainer.functions as F
@@ -12,11 +14,22 @@ except ImportError:
     import numpy as xp
 
 
+class TextExample(NamedTuple):
+    token_ids: xp.array
+    mask: xp.array
+
+
 def pad_ids(x, value, length):
     assert len(x) <= length
     if len(x) < length:
         return x + [value] * (length - len(x))
     return x
+
+
+def split_line(line):
+    if line.endswith('\n'):
+        line = line[:-1]
+    return [x for x in re.split('[ \t\n]+', line) if x]
 
 
 class Vocab(NamedTuple):
@@ -47,9 +60,7 @@ class Vocab(NamedTuple):
                   line,
                   chunk_length: Optional[int] = None,
                   include_start: bool = False) -> xp.array:
-        if line.endswith('\n'):
-            line = line[:-1]
-        tokens = line.split(sep=' ')
+        tokens = split_line(line)
         ids = []
         if include_start:
             ids.append(self.start_id)
@@ -66,10 +77,10 @@ class Vocab(NamedTuple):
             assert token_length <= chunk_length, 'number of tokens greater than chunk length'
             ids = pad_ids(ids, self.end_id, chunk_length)
 
-        mask = xp.zeros(len(ids), dtype=xp.float32)
-        mask[:token_length] = 1.
+        mask = xp.zeros(len(ids), dtype=xp.bool)
+        mask[:token_length] = True
 
-        return xp.array(ids), mask
+        return TextExample(xp.array(ids), mask)
 
 
 class TokenTransformer:
@@ -99,13 +110,11 @@ def make_vocab(glove_filename) -> Vocab:
 
 
 def filter_example(x, y, max_length=None):
-    if x.endswith('\n'):
-        x = x[:-1]
-    if y.endswith('\n'):
-        y = y[:-1]
-    x_within_length = max_length is None or len(x.split(sep=' ')) <= max_length
-    y_within_length = max_length is None or len(y.split(sep=' ')) <= max_length
-    return x and y and x_within_length and y_within_length
+    x_tokens = split_line(x)
+    y_tokens = split_line(y)
+    x_within_length = max_length is None or len(x_tokens) <= max_length
+    y_within_length = max_length is None or len(y_tokens) <= max_length
+    return x_tokens and y_tokens and x_within_length and y_within_length
 
 
 def make_dataset(source_bpe_filename,

@@ -1,16 +1,17 @@
 import os
 import shutil
 import json
+import sys
 import logging
 import click
 import gc
 import time
-
-from math import sqrt
+import logging
+import time
 
 import chainer
 
-from chainer.iterators import SerialIterator
+from chainer.iterators import MultithreadIterator
 from chainer.training.updaters import StandardUpdater
 from chainer.training import extensions, Trainer
 from chainer.optimizers import Adam
@@ -19,23 +20,17 @@ from chainer.serializers import load_npz, save_npz
 
 import chainer.functions as F
 
-from chainer_transformer.dataset import make_dataset, make_vocab
-from chainer_transformer.model import Transformer
+from chainer_transformer.dataset import make_dataset, make_vocab, TextExample
+from chainer_transformer.links import Transformer
+from chainer_transformer.functions import stack_nested
 
 
-def stack_batch(data):
-    source_embeddings = [x[0][0] for x in data]
-    source_masks = [x[0][1] for x in data]
-    target_embeddings = [x[1][0] for x in data]
-    target_masks = [x[1][1] for x in data]
-    return (F.stack(source_embeddings),
-            F.stack(source_masks)), (F.stack(target_embeddings),
-                                     F.stack(target_masks))
+logger = logging.getLogger('trainer')
 
 
 class TrainingState:
     def __init__(self):
-        self.step = 0
+        self.step = 1
 
     def serialize(self, s):
         if isinstance(s, chainer.Serializer):
@@ -45,7 +40,7 @@ class TrainingState:
 
 
 def save_training(out, model, optimizer, state):
-    print('saving training')
+    logger.info('saving training')
     model_filename = os.path.join(out, 'transformer.model')
     optimizer_filename = os.path.join(out, 'transformer.optimizer')
     state_filename = os.path.join(out, 'transformer.state')
@@ -62,7 +57,7 @@ def save_training(out, model, optimizer, state):
 
 
 def load_training(out, model, optimizer, state):
-    print('loading training')
+    logger.info('loading training')
     model_filename = os.path.join(out, 'transformer.model')
     optimizer_filename = os.path.join(out, 'transformer.optimizer')
     state_filename = os.path.join(out, 'transformer.state')
@@ -96,21 +91,35 @@ def load_training(out, model, optimizer, state):
               help='The chunk length of a sentence during training')
 @click.option('--batch_size', '-b', default=8)
 @click.option('--warmup_steps', default=4000)
-@click.option('--save_decimation', default=100)
+@click.option('--save_decimation', default=500)
 @click.option('--num_steps', '-m', default=1000)
 @click.option('--gpu_id', '-g', type=int, default=None)
 @click.option('--out', '-o', default='result')
 @click.option('--log_level',
               '-l',
-              default='INFO',
+              default='DEBUG',
               type=click.Choice(['DEBUG', 'INFO', 'WARN', 'ERROR']))
-def train_model(source_bpe, target_bpe, source_glove, target_glove,
-                chunk_length, batch_size, warmup_steps, save_decimation,
-                num_steps, gpu_id, out, log_level):
-    ll = getattr(logging, log_level)
-    logging.getLogger().setLevel(ll)
+def train(source_bpe, target_bpe, source_glove, target_glove,
+          chunk_length, batch_size, warmup_steps, save_decimation,
+          num_steps, gpu_id, out, log_level):
     if not os.path.exists(out):
         os.makedirs(out)
+
+    ll = getattr(logging, log_level)
+
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setLevel(ll)
+    stream_handler.setFormatter(logging.Formatter('%(message)s'))
+
+    file_handler = logging.FileHandler(
+            filename=os.path.join(out, 'training.log'),
+            mode='a')
+    file_handler.setLevel(ll)
+    file_handler.setFormatter(logging.Formatter('%(message)s'))
+
+    logger.addHandler(stream_handler)
+    logger.addHandler(file_handler)
+    logger.setLevel(ll)
 
     gpu_id = gpu_id if gpu_id is not None else -1
 
@@ -124,7 +133,7 @@ def train_model(source_bpe, target_bpe, source_glove, target_glove,
         output_model_dim = target_vocab.embedding_size
         dataset = make_dataset(source_bpe, target_bpe, source_vocab,
                                target_vocab, chunk_length)
-        train_iter = SerialIterator(dataset, batch_size)
+        iterator = MultithreadIterator(dataset, batch_size)
         state = TrainingState()
         model = Transformer(source_vocab, target_vocab)
         model.to_gpu(gpu_id)
@@ -133,7 +142,7 @@ def train_model(source_bpe, target_bpe, source_glove, target_glove,
         load_training(out, model, optimizer, state)
 
         try:
-            for n, batch in enumerate(train_iter):
+            for n, batch in enumerate(iterator):
                 if n >= num_steps:
                     break
 
@@ -142,10 +151,14 @@ def train_model(source_bpe, target_bpe, source_glove, target_glove,
 
                 model.cleargrads()
                 gc.collect()
-                source, target = stack_batch(batch)
-                output_probs, output_masks = model(source[0],
-                                                   source[1],
-                                                   length=chunk_length)
+
+                source, target = stack_nested(batch)
+
+                source.token_ids.to_gpu(gpu_id)
+                target.token_ids.to_gpu(gpu_id)
+
+                output_probs = model.train_forward(source.token_ids, target.token_ids)
+
                 loss = F.softmax_cross_entropy(
                     F.reshape(output_probs,
                               (output_probs.shape[0] * output_probs.shape[1],
@@ -154,13 +167,12 @@ def train_model(source_bpe, target_bpe, source_glove, target_glove,
                               (target[0].shape[0] * target[0].shape[1], )))
                 loss.backward()
 
-                learning_rate = sqrt(output_model_dim) * min(
-                    sqrt(state.step), state.step * (warmup_steps**-1.5))
+                learning_rate = (output_model_dim ** -0.5) * min(
+                    (state.step ** -0.5), state.step * (warmup_steps ** -1.5))
                 optimizer.alpha = learning_rate
                 optimizer.update()
 
-                print('time =', int(time.time()), '| step =', state.step,
-                      '| loss =', loss, '| lr =', learning_rate)
+                logger.info(f'time = {int(time.time())} | step = {state.step} | loss = {float(loss.array)} | lr = {learning_rate}')
 
                 state.step += 1
         finally:
@@ -168,4 +180,4 @@ def train_model(source_bpe, target_bpe, source_glove, target_glove,
 
 
 if __name__ == '__main__':
-    train_model()
+    train()

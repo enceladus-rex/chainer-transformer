@@ -6,35 +6,12 @@ from chainer import Link, Chain, ChainList
 import chainer.functions as F
 import chainer.links as L
 
+from chainer_transformer.functions import (scaled_dot_product_attention, generate_positional_encodings)
+
 try:
     import cupy as xp
 except ImportError:
     import numpy as xp
-
-
-def scaled_dot_product_attention(queries, keys, values, scale=0.1, mask=None):
-    x1 = F.matmul(queries, keys, transb=True) / xp.array(scale,
-                                                         dtype=keys.dtype)
-    x2 = F.where(mask,
-                 xp.ones_like(x1.array) *
-                 -xp.inf, x1) if mask is not None else x1
-    x3 = F.softmax(x2)
-    x4 = F.matmul(x3, values)
-    return x4
-
-
-def generate_positional_encoding(start, end, dim):
-    positions = xp.arange(start, end)
-    stacks = []
-    for i in range(dim):
-        divisor = 10000**(2 * i / float(dim))
-        elements = positions / divisor
-        if i % 2 == 0:
-            pe = xp.sin(elements, dtype=xp.float32)
-        else:
-            pe = xp.cos(elements, dtype=xp.float32)
-        stacks.append(pe)
-    return xp.transpose(xp.stack(stacks))
 
 
 class BatchApply(Chain):
@@ -72,6 +49,7 @@ class MultiHeadAttention(Chain):
         self.key_dim = key_dim
         self.value_dim = value_dim
         self.multi_head_dim = num_heads * value_dim
+        self.scale = 1. / sqrt(key_dim)
         with self.init_scope():
             self.head_query_links = ChainList()
             self.head_key_links = ChainList()
@@ -93,6 +71,7 @@ class MultiHeadAttention(Chain):
             head = scaled_dot_product_attention(query_projection,
                                                 key_projection,
                                                 value_projection,
+                                                scale=self.scale,
                                                 mask=mask)
 
             heads.append(head)
@@ -206,10 +185,10 @@ class Transformer(Chain):
     def __init__(self,
                  source_vocab,
                  target_vocab,
-                 num_heads=2,
-                 encoder_depth=2,
-                 decoder_depth=2,
-                 ff_dim=512,
+                 num_heads=8,
+                 encoder_depth=6,
+                 decoder_depth=6,
+                 ff_dim=1024,
                  p_drop=0.1,
                  max_input_length=256,
                  max_output_length=256):
@@ -227,9 +206,9 @@ class Transformer(Chain):
         self.p_drop = p_drop
         self.max_input_length = max_input_length
         self.max_output_length = max_output_length
-        self.input_positional_encodings = generate_positional_encoding(
+        self.input_positional_encodings = generate_positional_encodings(
             0, max_input_length, input_model_dim)
-        self.output_positional_encodings = generate_positional_encoding(
+        self.output_positional_encodings = generate_positional_encodings(
             0, max_output_length, output_model_dim)
         with self.init_scope():
             self.encoder = TransformerEncoder(encoder_depth, num_heads,
@@ -238,18 +217,46 @@ class Transformer(Chain):
                                               output_model_dim, ff_dim, p_drop)
             self.linear = L.Linear(output_model_dim, target_vocab.vocab_size)
 
-    def forward(self, input_ids, input_masks=None, length=None):
-        batch_size, input_length = input_ids.shape[0], input_ids.shape[1]
-        input_embeddings = F.embed_id(input_ids, self.source_vocab.embeddings)
+    def encode(self, input_embeddings):
         embeddings_dtype = input_embeddings.dtype
         input_positional_encodings = F.expand_dims(
-            self.input_positional_encodings[:input_length, :].astype(
+            self.input_positional_encodings[:input_embeddings.shape[-2], :].astype(
                 embeddings_dtype), 0)
 
         transformed_inputs = F.dropout(
             input_positional_encodings + input_embeddings, self.p_drop)
 
-        encoding = self.encoder(transformed_inputs)
+        encodings = self.encoder(transformed_inputs)
+        return encodings
+
+    def decode(self, encodings, output_embeddings):
+        embeddings_dtype = output_embeddings.dtype
+        output_positional_encodings = F.expand_dims(
+            self.output_positional_encodings[:output_embeddings.
+                                             shape[-2], :].astype(
+                                                 embeddings_dtype), 0)
+
+        transformed_ouputs = F.dropout(
+            output_positional_encodings + output_embeddings, self.p_drop)
+
+        decoding = self.decoder(encodings, transformed_ouputs)
+
+        logits = self.linear(decoding, n_batch_axes=2)
+        token_probs = F.softmax(logits, axis=-1)
+        return token_probs
+
+    def train_forward(self, input_ids, output_ids):
+        input_embeddings = F.embed_id(input_ids, self.source_vocab.embeddings)
+        output_embeddings = F.embed_id(output_ids, self.target_vocab.embeddings)
+
+        encodings = self.encode(input_embeddings)
+        token_probs = self.decode(encodings, output_embeddings)
+        return token_probs
+
+    def forward(self, input_ids, length=None):
+        batch_size, input_length = input_ids.shape[0], input_ids.shape[1]
+        input_embeddings = F.embed_id(input_ids, self.source_vocab.embeddings)
+        encodings = self.encode(input_embeddings)
 
         output_probs = None
         output_embeddings = self.target_vocab.embed(
@@ -265,18 +272,7 @@ class Transformer(Chain):
         while (length is None
                and not all_done) or (length is not None
                                      and current_length < length):
-            output_positional_encodings = F.expand_dims(
-                self.output_positional_encodings[:output_embeddings.
-                                                 shape[-2], :].astype(
-                                                     embeddings_dtype), 0)
-
-            transformed_ouputs = F.dropout(
-                output_positional_encodings + output_embeddings, self.p_drop)
-
-            decoding = self.decoder(encoding, transformed_ouputs)
-
-            logits = self.linear(decoding, n_batch_axes=2)
-            token_probs = F.softmax(logits, axis=-1)
+            token_probs = self.decode(encodings, output_embeddings)
 
             next_token_probs = token_probs[:, -1, :]
             next_token_ids = F.argmax(next_token_probs, axis=-1)
@@ -302,9 +298,4 @@ class Transformer(Chain):
             all_done = xp.all(next_end_predicted.array)
             current_length += 1
 
-        output_dtype = output_embeddings.dtype
-        output_masks = F.where(
-            end_predicted.array,
-            xp.zeros_like(end_predicted.array, dtype=output_dtype),
-            xp.ones_like(end_predicted.array, dtype=output_dtype))
-        return output_probs, output_masks
+        return output_probs
