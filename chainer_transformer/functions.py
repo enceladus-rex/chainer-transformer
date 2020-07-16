@@ -81,7 +81,8 @@ def _stack_nested_structure(structure):
         args = [_stack_nested_structure(x) for x in structure.data]
         return structure.tuple_constructor(*args)
     else:
-        return chainer.as_variable(xp.stack([xp.asarray(x) for x in structure]))
+        return chainer.as_variable(xp.stack([xp.asarray(x)
+                                             for x in structure]))
 
 
 def stack_nested(data):
@@ -94,4 +95,3 @@ def stack_nested(data):
         _add_nested_item(structure, x)
 
     return _stack_nested_structure(structure)
-

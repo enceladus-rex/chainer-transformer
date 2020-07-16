@@ -6,7 +6,8 @@ from chainer import Link, Chain, ChainList
 import chainer.functions as F
 import chainer.links as L
 
-from chainer_transformer.functions import (scaled_dot_product_attention, generate_positional_encodings)
+from chainer_transformer.functions import (scaled_dot_product_attention,
+                                           generate_positional_encodings)
 
 try:
     import cupy as xp
@@ -220,8 +221,8 @@ class Transformer(Chain):
     def encode(self, input_embeddings):
         embeddings_dtype = input_embeddings.dtype
         input_positional_encodings = F.expand_dims(
-            self.input_positional_encodings[:input_embeddings.shape[-2], :].astype(
-                embeddings_dtype), 0)
+            self.input_positional_encodings[:input_embeddings.shape[-2], :].
+            astype(embeddings_dtype), 0)
 
         transformed_inputs = F.dropout(
             input_positional_encodings + input_embeddings, self.p_drop)
@@ -232,9 +233,8 @@ class Transformer(Chain):
     def decode(self, encodings, output_embeddings):
         embeddings_dtype = output_embeddings.dtype
         output_positional_encodings = F.expand_dims(
-            self.output_positional_encodings[:output_embeddings.
-                                             shape[-2], :].astype(
-                                                 embeddings_dtype), 0)
+            self.output_positional_encodings[:output_embeddings.shape[-2], :].
+            astype(embeddings_dtype), 0)
 
         transformed_ouputs = F.dropout(
             output_positional_encodings + output_embeddings, self.p_drop)
@@ -247,7 +247,8 @@ class Transformer(Chain):
 
     def train_forward(self, input_ids, output_ids):
         input_embeddings = F.embed_id(input_ids, self.source_vocab.embeddings)
-        output_embeddings = F.embed_id(output_ids, self.target_vocab.embeddings)
+        output_embeddings = F.embed_id(output_ids,
+                                       self.target_vocab.embeddings)
 
         encodings = self.encode(input_embeddings)
         token_probs = self.decode(encodings, output_embeddings)

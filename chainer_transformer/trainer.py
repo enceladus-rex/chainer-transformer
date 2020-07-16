@@ -24,7 +24,6 @@ from chainer_transformer.dataset import make_dataset, make_vocab, TextExample
 from chainer_transformer.links import Transformer
 from chainer_transformer.functions import stack_nested
 
-
 logger = logging.getLogger('trainer')
 
 
@@ -99,9 +98,9 @@ def load_training(out, model, optimizer, state):
               '-l',
               default='DEBUG',
               type=click.Choice(['DEBUG', 'INFO', 'WARN', 'ERROR']))
-def train(source_bpe, target_bpe, source_glove, target_glove,
-          chunk_length, batch_size, warmup_steps, save_decimation,
-          num_steps, gpu_id, out, log_level):
+def train(source_bpe, target_bpe, source_glove, target_glove, chunk_length,
+          batch_size, warmup_steps, save_decimation, num_steps, gpu_id, out,
+          log_level):
     if not os.path.exists(out):
         os.makedirs(out)
 
@@ -111,9 +110,9 @@ def train(source_bpe, target_bpe, source_glove, target_glove,
     stream_handler.setLevel(ll)
     stream_handler.setFormatter(logging.Formatter('%(message)s'))
 
-    file_handler = logging.FileHandler(
-            filename=os.path.join(out, 'training.log'),
-            mode='a')
+    file_handler = logging.FileHandler(filename=os.path.join(
+        out, 'training.log'),
+                                       mode='a')
     file_handler.setLevel(ll)
     file_handler.setFormatter(logging.Formatter('%(message)s'))
 
@@ -157,22 +156,25 @@ def train(source_bpe, target_bpe, source_glove, target_glove,
                 source.token_ids.to_gpu(gpu_id)
                 target.token_ids.to_gpu(gpu_id)
 
-                output_probs = model.train_forward(source.token_ids, target.token_ids)
+                output_probs = model.train_forward(source.token_ids,
+                                                   target.token_ids)
 
                 loss = F.softmax_cross_entropy(
                     F.reshape(output_probs,
                               (output_probs.shape[0] * output_probs.shape[1],
                                output_probs.shape[2])),
-                    F.reshape(target[0],
-                              (target[0].shape[0] * target[0].shape[1], )))
+                    F.reshape(target.token_ids, (target.token_ids.shape[0] *
+                                                 target.token_ids.shape[1], )))
                 loss.backward()
 
-                learning_rate = (output_model_dim ** -0.5) * min(
-                    (state.step ** -0.5), state.step * (warmup_steps ** -1.5))
+                learning_rate = (output_model_dim**-0.5) * min(
+                    (state.step**-0.5), state.step * (warmup_steps**-1.5))
                 optimizer.alpha = learning_rate
                 optimizer.update()
 
-                logger.info(f'time = {int(time.time())} | step = {state.step} | loss = {float(loss.array)} | lr = {learning_rate}')
+                logger.info(
+                    f'time = {int(time.time())} | step = {state.step} | loss = {float(loss.array)} | lr = {learning_rate}'
+                )
 
                 state.step += 1
         finally:
