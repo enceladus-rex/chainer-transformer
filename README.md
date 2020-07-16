@@ -34,7 +34,11 @@ recurrent models could be greatly diminished.
 As described, the main goal of the Transformer is to take an input sequence of tokens (i.e. words or subword units)
 and transform them into an output sequence of tokens. A sequence of tokens, however, can be represented
 in any number of different ways and so the first step in this process requires that a
-suitable representation be chosen. For the Transformer model, it is expected
+suitable representation be chosen. 
+
+#### Input/Output Representation
+
+For the Transformer model, it is expected
 that the input token sequence (i.e. a sentence) is converted into a sequence of vectors known as embeddings.
 Such embeddings have been shown to be powerful ways to capture semantic meaning
 in a vector space. This is typically done by running a separate training process, using
@@ -68,11 +72,13 @@ converted into embeddings (described in the paper as `Output Embedding`) which a
 vector representations. The model then uses the input embeddings along with these shifted output 
 embeddings in order to generate a next token probability distribution for each of the shifted output 
 positions. So after having produced `i` output tokens, the model will construct the new shifted output 
-embeddings of length `i+1`. For each of these `i+1` embeddings there will be a
+embeddings of length `i+1`. For each of these `i+1` embeddings, there will be a
 discrete categorical distribution corresponding to the next token probabilities. The `i+1`th distribution
 can then be used to predict the next token in the output sequence (i.e. taking the most likely or
 by performing beam search). This structure of inputs and outputs makes end-to-end neural
 learning possible and enables the network architectures described in the following sections.
+
+#### Encoder/Decoder Architecture
 
 The Transformer's neural architecture can be decomposed into two components, the encoder and
 the decoder. The encoder is a neural module that takes as input the previously described input 
@@ -88,6 +94,8 @@ times, once for each output token. As described earlier, the output of the decod
 categorical distribution over the set of possible output tokens. Additionally, there are two inputs 
 to the decoder, the encodings (from the encoder) and the aforementioned output embeddings with a 
 positional embedding added to them just like with the encoder inputs.
+
+#### Multi-Head Attention
 
 Both the encoder and the decoder heavily use what is known as multi-head scaled dot-product attention,
 or multi-head attention (MHA).
@@ -121,6 +129,8 @@ self-attention as the values. One important detail was that the self-attention u
 decoder applied masking of the dot-product weights so that the convex combination for output
 as position i would never include information at later time steps. This enforces the autoregressive
 nature of the model.
+
+#### Further Details
 
 Along with MHA, feed forward networks were used as well as layer normalization and residual connections.
 These operations were combined into stacks which were repeated multiple times to produce deep
