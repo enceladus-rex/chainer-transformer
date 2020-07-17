@@ -90,10 +90,11 @@ learned embedding and is just computed using a function of the position in the s
 the size of the embedding space. The encoder produces a sequence of encodings with the same
 length as the input. For every input sequence, the encoder is run only a single time.
 The decoder, on the other hand is, a separate neural module that unlike the encoder is run M 
-times, once for each output token. As described earlier, the output of the decoder is a discrete 
-categorical distribution over the set of possible output tokens. Additionally, there are two inputs 
-to the decoder, the encodings (from the encoder) and the aforementioned output embeddings with a 
-positional embedding added to them just like with the encoder inputs.
+times, once for each output token. As described earlier, the output of the decoder is a sequence of
+discrete categorical distributions over the set of possible next output tokens for each output position. 
+Furthermore, there are two inputs to the decoder, the encodings (from the encoder) and the 
+aforementioned output embeddings with positional embeddings added to them just like with the encoder 
+inputs.
 
 #### Multi-Head Attention
 
