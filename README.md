@@ -102,11 +102,11 @@ Both the encoder and the decoder heavily use what is known as multi-head scaled 
 or multi-head attention (MHA).
 This attention mechanism is used in cases where given three sequences of vectors, Q, K, and V of
 lengths L, J, and J respectively, you want to generate an output sequence of vectors Z of length L in such a way
-that each output vector is produced by attending over all of the J elements in sequence K using each
-of the L elements in sequence Q. Additionally, the output vector should be produced mainly by "looking" at 
+that each output vector is produced by attending over all of the J elements in sequence K using a corresponding
+vector in sequence Q. Additionally, the output vector should be produced mainly by "looking" at 
 the vectors in the sequence V. The matrices Q, K, and V are dubbed queries, keys, and values respectively
-because this mechanism can be described as using using each query to lookup values using the keys to finally
-computing an output. Dot product attention accomplishes this by first linearly mapping the 
+because this mechanism can be described as using using each query to extract keys from which to lookup values
+which are then combined to compute an output. Dot product attention accomplishes this by first linearly mapping the 
 queries (Q) of length L and keys (K) of length J into vectors with the same dimensionality.
 Additionally, the J values in V are linearly mapped to vectors with the desired dimensionality of the output.
 Each of the J output vectors of the sequence Z are then computed using a convex 
