@@ -59,7 +59,7 @@ class Vocab(NamedTuple):
     def transform(self,
                   line,
                   chunk_length: Optional[int] = None,
-                  include_start: bool = False) -> xp.array:
+                  include_start: bool = False) -> TextExample:
         tokens = split_line(line)
         ids = []
         if include_start:
