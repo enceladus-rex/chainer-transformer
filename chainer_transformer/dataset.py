@@ -16,7 +16,7 @@ except ImportError:
 
 class TextExample(NamedTuple):
     token_ids: xp.array
-    mask: xp.array
+    masks: xp.array
 
 
 def pad_ids(x, value, length):
@@ -77,10 +77,10 @@ class Vocab(NamedTuple):
             assert token_length <= chunk_length, 'number of tokens greater than chunk length'
             ids = pad_ids(ids, self.end_id, chunk_length)
 
-        mask = xp.zeros(len(ids), dtype=xp.bool)
-        mask[:token_length] = True
+        masks = xp.ones(len(ids), dtype=xp.bool)
+        masks[:token_length] = False
 
-        return TextExample(xp.array(ids), mask)
+        return TextExample(xp.array(ids), masks)
 
 
 class TokenTransformer:

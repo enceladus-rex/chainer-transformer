@@ -17,7 +17,7 @@ def scaled_dot_product_attention(queries, keys, values, scale=1., mask=None):
     x2 = F.where(mask,
                  xp.ones_like(x1.array) *
                  -xp.inf, x1) if mask is not None else x1
-    x3 = F.softmax(x2)
+    x3 = F.softmax(x2, axis=-1)
     x4 = F.matmul(x3, values)
     return x4
 

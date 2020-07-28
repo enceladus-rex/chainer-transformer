@@ -103,8 +103,10 @@ class TransformerEncoderUnit(Chain):
             self.lnorm2 = BatchApply(L.LayerNormalization)
             self.ff = PointwiseFeedForwardNetwork(model_dim, ff_dim)
 
-    def forward(self, inputs_unit):
-        x1 = F.dropout(self.mha(inputs_unit, inputs_unit, inputs_unit),
+    def forward(self, inputs_unit, input_masks=None):
+        if input_masks is not None:
+            input_masks = F.expand_dims(input_masks, -2)
+        x1 = F.dropout(self.mha(inputs_unit, inputs_unit, inputs_unit, mask=input_masks),
                        self.p_drop)
         x2 = self.lnorm1(inputs_unit + x1)
         x3 = F.dropout(self.ff(x2), self.p_drop)
@@ -126,15 +128,23 @@ class TransformerDecoderUnit(Chain):
             self.lnorm3 = BatchApply(L.LayerNormalization)
             self.ff = PointwiseFeedForwardNetwork(model_dim, ff_dim)
 
-    def forward(self, inputs_encoding, outputs_unit):
-        mask_shape = list(outputs_unit.shape)
+    def forward(self, input_encodings, output_units, input_masks=None, output_masks=None):
+        if input_masks is not None:
+            input_masks = F.expand_dims(input_masks, -2)
+
+        mask_shape = list(output_units.shape)
         mask_shape[-1] = mask_shape[-2]
         mask = xp.triu(xp.ones(mask_shape, dtype=xp.bool), k=1)
+
+        if output_masks is not None:
+            output_masks = F.expand_dims(output_masks, -2)
+            mask = xp.logical_or(mask, output_masks.array)
+
         x1 = F.dropout(
-            self.mmha(outputs_unit, outputs_unit, outputs_unit, mask),
+            self.mmha(output_units, output_units, output_units, mask=mask),
             self.p_drop)
-        x2 = self.lnorm1(outputs_unit + x1)
-        x3 = F.dropout(self.mha(x2, inputs_encoding, inputs_encoding),
+        x2 = self.lnorm1(output_units + x1)
+        x3 = F.dropout(self.mha(x2, input_encodings, input_encodings, mask=input_masks),
                        self.p_drop)
         x4 = self.lnorm2(x2 + x3)
         x5 = F.dropout(self.ff(x4), self.p_drop)
@@ -152,11 +162,11 @@ class TransformerEncoder(Chain):
                     TransformerEncoderUnit(num_heads, model_dim, ff_dim,
                                            p_drop))
 
-    def forward(self, inputs_encoding):
-        unit_inputs = [inputs_encoding]
+    def forward(self, input_encodings, input_masks=None):
+        unit_inputs = [input_encodings]
         for unit_link in self.unit_links:
             x = unit_inputs[-1]
-            o = unit_link(x)
+            o = unit_link(x, input_masks=input_masks)
             unit_inputs.append(o)
         return unit_inputs[-1]
 
@@ -172,14 +182,14 @@ class TransformerDecoder(Chain):
                     TransformerDecoderUnit(num_heads, model_dim, ff_dim,
                                            p_drop))
 
-    def forward(self, inputs_encoding, outputs_unit):
-        unit_inputs = [outputs_unit]
+    def forward(self, input_encodings, output_units, input_masks=None, output_masks=None):
+        unit_inputs = [output_units]
         for unit_link in self.unit_links:
             x = unit_inputs[-1]
-            o = unit_link(inputs_encoding, x)
+            o = unit_link(input_encodings, x, input_masks=input_masks, output_masks=output_masks)
             unit_inputs.append(o)
         unit_output = unit_inputs[-1]
-        return F.softmax(self.lin1(unit_output, n_batch_axes=2))
+        return F.softmax(self.lin1(unit_output, n_batch_axes=2), axis=-1)
 
 
 class Transformer(Chain):
@@ -218,7 +228,7 @@ class Transformer(Chain):
                                               output_model_dim, ff_dim, p_drop)
             self.linear = L.Linear(output_model_dim, target_vocab.vocab_size)
 
-    def encode(self, input_embeddings):
+    def encode(self, input_embeddings, input_masks=None):
         embeddings_dtype = input_embeddings.dtype
         input_positional_encodings = F.expand_dims(
             self.input_positional_encodings[:input_embeddings.shape[-2], :].
@@ -227,10 +237,10 @@ class Transformer(Chain):
         transformed_inputs = F.dropout(
             input_positional_encodings + input_embeddings, self.p_drop)
 
-        encodings = self.encoder(transformed_inputs)
+        encodings = self.encoder(transformed_inputs, input_masks=input_masks)
         return encodings
 
-    def decode(self, encodings, output_embeddings):
+    def decode(self, encodings, output_embeddings, input_masks=None, output_masks=None):
         embeddings_dtype = output_embeddings.dtype
         output_positional_encodings = F.expand_dims(
             self.output_positional_encodings[:output_embeddings.shape[-2], :].
@@ -239,25 +249,25 @@ class Transformer(Chain):
         transformed_ouputs = F.dropout(
             output_positional_encodings + output_embeddings, self.p_drop)
 
-        decoding = self.decoder(encodings, transformed_ouputs)
+        decoding = self.decoder(encodings, transformed_ouputs, input_masks=input_masks, output_masks=output_masks)
 
         logits = self.linear(decoding, n_batch_axes=2)
         token_probs = F.softmax(logits, axis=-1)
         return token_probs
 
-    def train_forward(self, input_ids, output_ids):
+    def train_forward(self, input_ids, output_ids, input_masks=None, output_masks=None):
         input_embeddings = F.embed_id(input_ids, self.source_vocab.embeddings)
         output_embeddings = F.embed_id(output_ids,
                                        self.target_vocab.embeddings)
 
-        encodings = self.encode(input_embeddings)
-        token_probs = self.decode(encodings, output_embeddings)
+        encodings = self.encode(input_embeddings, input_masks=input_masks)
+        token_probs = self.decode(encodings, output_embeddings, input_masks=input_masks, output_masks=output_masks)
         return token_probs
 
-    def forward(self, input_ids, length=None):
+    def forward(self, input_ids, input_masks=None, length=None):
         batch_size, input_length = input_ids.shape[0], input_ids.shape[1]
         input_embeddings = F.embed_id(input_ids, self.source_vocab.embeddings)
-        encodings = self.encode(input_embeddings)
+        encodings = self.encode(input_embeddings, input_masks=input_masks)
 
         output_probs = None
         output_embeddings = self.target_vocab.embed(
@@ -273,7 +283,7 @@ class Transformer(Chain):
         while (length is None
                and not all_done) or (length is not None
                                      and current_length < length):
-            token_probs = self.decode(encodings, output_embeddings)
+            token_probs = self.decode(encodings, output_embeddings, input_masks=input_masks)
 
             next_token_probs = token_probs[:, -1, :]
             next_token_ids = F.argmax(next_token_probs, axis=-1)

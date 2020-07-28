@@ -24,6 +24,11 @@ from chainer_transformer.dataset import make_dataset, make_vocab, TextExample
 from chainer_transformer.links import Transformer
 from chainer_transformer.functions import stack_nested
 
+try:
+    import cupy as xp
+except ImportError:
+    import numpy as xp
+
 logger = logging.getLogger('trainer')
 
 
@@ -154,17 +159,24 @@ def train(source_bpe, target_bpe, source_glove, target_glove, chunk_length,
                 source, target = stack_nested(batch)
 
                 source.token_ids.to_gpu(gpu_id)
+                source.masks.to_gpu(gpu_id)
                 target.token_ids.to_gpu(gpu_id)
+                target.masks.to_gpu(gpu_id)
 
                 output_probs = model.train_forward(source.token_ids,
-                                                   target.token_ids)
+                                                   target.token_ids,
+                                                   input_masks=source.masks,
+                                                   output_masks=target.masks)
 
-                loss = F.softmax_cross_entropy(
+                unnormalized_loss = F.softmax_cross_entropy(
                     F.reshape(output_probs,
                               (output_probs.shape[0] * output_probs.shape[1],
                                output_probs.shape[2])),
                     F.reshape(target.token_ids, (target.token_ids.shape[0] *
-                                                 target.token_ids.shape[1], )))
+                                                 target.token_ids.shape[1], )),
+                    reduce='no')
+                loss_mask = xp.reshape(xp.logical_not(target.masks.array).astype(xp.float32), (target.masks.shape[0] * target.masks.shape[1], ))
+                loss = F.sum(unnormalized_loss * loss_mask) / F.sum(loss_mask)
                 loss.backward()
 
                 learning_rate = (output_model_dim**-0.5) * min(
