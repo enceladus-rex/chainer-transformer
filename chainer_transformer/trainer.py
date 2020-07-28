@@ -175,7 +175,9 @@ def train(source_bpe, target_bpe, source_glove, target_glove, chunk_length,
                     F.reshape(target.token_ids, (target.token_ids.shape[0] *
                                                  target.token_ids.shape[1], )),
                     reduce='no')
-                loss_mask = xp.reshape(xp.logical_not(target.masks.array).astype(xp.float32), (target.masks.shape[0] * target.masks.shape[1], ))
+                loss_mask = xp.reshape(
+                    xp.logical_not(target.masks.array).astype(xp.float32),
+                    (target.masks.shape[0] * target.masks.shape[1], ))
                 loss = F.sum(unnormalized_loss * loss_mask) / F.sum(loss_mask)
                 loss.backward()
 
