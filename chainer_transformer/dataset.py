@@ -59,6 +59,7 @@ class Vocab(NamedTuple):
     def transform(self,
                   line,
                   chunk_length: Optional[int] = None,
+                  include_end: bool = True,
                   include_start: bool = False) -> TextExample:
         tokens = split_line(line)
         ids = []
@@ -71,7 +72,9 @@ class Vocab(NamedTuple):
                 pdb.set_trace()
             ids.append(self.bpe_to_id[t])
 
-        ids.append(self.end_id)
+        if include_end:
+            ids.append(self.end_id)
+
         token_length = len(ids)
         if chunk_length is not None:
             assert token_length <= chunk_length, 'number of tokens greater than chunk length'

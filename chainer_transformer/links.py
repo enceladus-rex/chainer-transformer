@@ -181,7 +181,6 @@ class TransformerDecoder(Chain):
     def __init__(self, depth, num_heads, model_dim, ff_dim, p_drop):
         super().__init__()
         with self.init_scope():
-            self.lin1 = L.Linear(model_dim)
             self.unit_links = ChainList()
             for i in range(depth):
                 self.unit_links.append(
@@ -201,8 +200,7 @@ class TransformerDecoder(Chain):
                           input_masks=input_masks,
                           output_masks=output_masks)
             unit_inputs.append(o)
-        unit_output = unit_inputs[-1]
-        return F.softmax(self.lin1(unit_output, n_batch_axes=2), axis=-1)
+        return unit_inputs[-1]
 
 
 class Transformer(Chain):
